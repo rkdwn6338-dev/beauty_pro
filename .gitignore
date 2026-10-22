@@ -1,0 +1,15 @@
+node_modules/
+.pnpm-store/
+.next/
+.vercel/
+.env*
+!.env.example
+coverage/
+playwright-report/
+test-results/
+artifacts/
+*.tsbuildinfo
+.DS_Store
+docs/*.pages
+docs/*.key
+docs/*Handoff*

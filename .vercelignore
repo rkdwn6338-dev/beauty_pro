@@ -1,0 +1,10 @@
+docs/
+artifacts/
+tests/
+test-results/
+playwright-report/
+.env*
+!.env.example
+.git/
+node_modules/
+.pnpm-store/
