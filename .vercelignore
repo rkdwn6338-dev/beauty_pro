@@ -8,3 +8,6 @@ playwright-report/
 .git/
 node_modules/
 .pnpm-store/
+
+/1차 개발 테스트 제품 자료/
+/1차 개발 테스트 제품 자료/
