@@ -7,6 +7,15 @@ import {
   generatePlan,
   regenerateSection,
 } from "@/lib/ai";
+import {
+  findGeneration,
+  reserveGeneration,
+  completeGeneration,
+  failGeneration,
+  GenerationRequestError,
+  boundedPlanningInput,
+  type GenerationIntent,
+} from "@/lib/generation-requests";
 import { planningContext } from "@/lib/planning-context";
 import {
   changeApproval,
@@ -45,6 +54,8 @@ const inputSchema = z
     beforeRevision: z.number().int().positive().optional(),
     snapshot: planDocumentSchema.optional(),
     consent: z.boolean().optional(),
+    requestId: z.uuid().optional(),
+    checkOnly: z.boolean().optional(),
     instruction: z.string().trim().max(1000).optional(),
   })
   .strict();
@@ -79,6 +90,47 @@ export async function POST(request: NextRequest) {
     .eq("project_id", project.id)
     .maybeSingle();
   if (!product) return apiError("제품에 접근할 수 없습니다.", 404);
+  const generation =
+    input.operation === "generate" || input.operation === "regenerate_section";
+  let intent: GenerationIntent | null = null;
+  if (generation) {
+    if (!input.requestId || input.baseId === undefined)
+      return apiError("AI 요청 번호와 기준 버전을 확인해 주세요.");
+    intent = {
+      requestId: input.requestId,
+      projectId: project.id,
+      productId: product.id,
+      agencyId: project.agency_id,
+      userId: user.id,
+      operation: input.operation as "generate" | "regenerate_section",
+      baseId: input.baseId,
+      sectionId: input.sectionId,
+      instruction: input.instruction,
+    };
+    try {
+      const replay = await findGeneration(supabase, intent);
+      if (replay) return response({ version: replay, replayed: true });
+      if (input.checkOnly)
+        return apiError(
+          "이 번호로 시작한 AI 요청이 없습니다. 새 요청으로 시작할 수 있습니다.",
+          404,
+        );
+    } catch (error) {
+      return apiError(
+        error instanceof Error
+          ? error.message
+          : "AI 요청 상태를 확인하지 못했습니다.",
+        error instanceof GenerationRequestError ? error.status : 503,
+      );
+    }
+  } else if (input.checkOnly)
+    return apiError("AI 요청의 상태만 확인할 수 있습니다.");
+  let reserved = false;
+  // 예약·생성·저장 오류에서 기존 예약을 남기거나 종료하여 자동 재호출을 막습니다.
+  const markFailed = async () => {
+    if (reserved && intent)
+      await failGeneration(supabase, intent).catch(() => false);
+  };
   const latestQuery = () =>
     supabase
       .from("planning_versions")
@@ -154,7 +206,7 @@ export async function POST(request: NextRequest) {
           );
         try {
           const model = await configuredModel("text");
-          plan = await generatePlan(model, {
+          const providerInput = {
             brand: project.brand,
             product: context.product,
             evidence: context.sources.map((s) => ({
@@ -163,8 +215,15 @@ export async function POST(request: NextRequest) {
               excerpt: s.excerpt,
               claim: s.claim,
             })),
-          });
-        } catch {
+          };
+          boundedPlanningInput(providerInput);
+          await reserveGeneration(supabase, intent!, model);
+          reserved = true;
+          plan = await generatePlan(model, providerInput);
+        } catch (error) {
+          await markFailed();
+          if (error instanceof GenerationRequestError)
+            return apiError(error.message, error.status);
           return apiError(
             "AI 기획을 완료하지 못했습니다. 연결과 사용 예산을 확인해 주세요. 자동으로 재시도하지 않습니다.",
             502,
@@ -179,11 +238,13 @@ export async function POST(request: NextRequest) {
             suggested_claim: s.claim,
           })),
         );
-        if (issues.length)
+        if (issues.length) {
+          await markFailed();
           return apiError(
             `초안 검증을 통과하지 못했습니다: ${issues.join(" ")}`,
             422,
           );
+        }
       }
       snapshot = createDocument(plan, context.basis, context.sources);
     } else {
@@ -217,15 +278,22 @@ export async function POST(request: NextRequest) {
         let content;
         try {
           const model = await configuredModel("text");
-          content = await regenerateSection(model, {
+          const providerInput = {
             basis: base.basis,
             coreUsp: base.coreUsp,
             strategy: base.strategy,
             section,
             sources: base.sources,
             instruction: input.instruction ?? "",
-          });
-        } catch {
+          };
+          boundedPlanningInput(providerInput);
+          await reserveGeneration(supabase, intent!, model);
+          reserved = true;
+          content = await regenerateSection(model, providerInput);
+        } catch (error) {
+          await markFailed();
+          if (error instanceof GenerationRequestError)
+            return apiError(error.message, error.status);
           return apiError(
             "구좌 재생성을 완료하지 못했습니다. 연결과 사용 예산을 확인해 주세요. 자동으로 재시도하지 않습니다.",
             502,
@@ -243,6 +311,7 @@ export async function POST(request: NextRequest) {
       }
     }
   } catch (error) {
+    await markFailed();
     return apiError(
       error instanceof z.ZodError
         ? "기획서 입력 형식을 확인해 주세요."
@@ -252,8 +321,28 @@ export async function POST(request: NextRequest) {
       422,
     );
   }
-  if (new TextEncoder().encode(JSON.stringify(snapshot)).byteLength > 500000)
+  if (new TextEncoder().encode(JSON.stringify(snapshot)).byteLength > 500000) {
+    await markFailed();
     return apiError("기획서 크기 한도를 초과했습니다.", 413);
+  }
+  if (generation && intent) {
+    try {
+      const version = await completeGeneration(
+        supabase,
+        intent,
+        snapshot as unknown as Json,
+      );
+      return response({ version });
+    } catch (error) {
+      // DB 완료 응답이 유실됐을 수 있으므로 failed로 덮어쓰지 않고 같은 번호로 확인합니다.
+      return apiError(
+        error instanceof Error
+          ? error.message
+          : "저장 결과를 확인하지 못했습니다.",
+        error instanceof GenerationRequestError ? error.status : 503,
+      );
+    }
+  }
   const { data: version, error: saveError } = await supabase
     .from("planning_versions")
     .insert({
