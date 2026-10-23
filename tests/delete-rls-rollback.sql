@@ -34,10 +34,31 @@ select set_config('test.delete_result',(current_setting('test.delete_result')::j
 select set_config('request.jwt.claims','{"sub":"95100000-0000-4000-8000-000000000004","role":"authenticated"}',true);
 with removed as (delete from public.source_files where id='99100000-0000-4000-8000-000000000004' returning id)
 select set_config('test.delete_result',(current_setting('test.delete_result')::jsonb||jsonb_build_object('other_company_blocked',(select count(*)=0 from removed)))::text,true);
--- 기존 UPDATE 정책이 업로더 변경을 허용하는지 확인합니다. 변경은 롤백됩니다.
+-- 보호 트리거가 업로더·경로·프로젝트·파일 ID 변경을 막는지 확인합니다.
 select set_config('request.jwt.claims','{"sub":"95100000-0000-4000-8000-000000000003","role":"authenticated"}',true);
-with changed as (update public.source_files set uploaded_by='95100000-0000-4000-8000-000000000003' where id='99100000-0000-4000-8000-000000000003' returning id)
-select set_config('test.delete_result',(current_setting('test.delete_result')::jsonb||jsonb_build_object('existing_policy_allows_uploader_reassignment',(select count(*)=1 from changed)))::text,true);
+do $$
+declare
+  field text;
+  blocked boolean;
+begin
+  foreach field in array array['uploaded_by','storage_path','project_id','id'] loop
+    blocked := false;
+    begin
+      case field
+        when 'uploaded_by' then update public.source_files set uploaded_by='95100000-0000-4000-8000-000000000003' where id='99100000-0000-4000-8000-000000000003';
+        when 'storage_path' then update public.source_files set storage_path='97100000-0000-4000-8000-000000000001/other.pdf' where id='99100000-0000-4000-8000-000000000003';
+        when 'project_id' then update public.source_files set project_id='97100000-0000-4000-8000-000000000002' where id='99100000-0000-4000-8000-000000000003';
+        when 'id' then update public.source_files set id='99100000-0000-4000-8000-000000000005' where id='99100000-0000-4000-8000-000000000003';
+      end case;
+    exception when insufficient_privilege then
+      blocked := sqlerrm='파일의 프로젝트·업로더·저장 경로는 변경할 수 없습니다.';
+    end;
+    perform set_config('test.delete_result',(current_setting('test.delete_result')::jsonb||jsonb_build_object(field||'_change_blocked',blocked))::text,true);
+  end loop;
+end;
+$$;
+with changed as (update public.source_files set status='failed' where id='99100000-0000-4000-8000-000000000003' returning id)
+select set_config('test.delete_result',(current_setting('test.delete_result')::jsonb||jsonb_build_object('status_update_allowed',(select count(*)=1 from changed)))::text,true);
 reset role;
 select current_setting('test.delete_result')::jsonb as deletion_checks;
 rollback;
