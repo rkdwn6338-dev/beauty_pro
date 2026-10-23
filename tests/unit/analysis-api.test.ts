@@ -259,13 +259,11 @@ describe("분석 API 접근과 과금 경계", () => {
     expect((await analysis(request(reviewInput))).status).toBe(409);
     expect(state.queries.some((q) => q.operation === "update")).toBe(false);
   });
-  it("기획은 서버에서 승인된 근거만 조회하고 없으면 생성하지 않는다", async () => {
+  it("이전 임시 기획 API로 요청 보호를 우회하지 못한다", async () => {
     expect(
       (await planning(request({ projectId, productId, consent: true }))).status,
-    ).toBe(409);
-    expect(
-      state.queries.find((q) => q.table === "evidence")?.filters,
-    ).toContainEqual(["review_status", "approved"]);
+    ).toBe(410);
     expect(state.generate).not.toHaveBeenCalled();
+    expect(state.queries.some((q) => q.table === "evidence")).toBe(false);
   });
 });

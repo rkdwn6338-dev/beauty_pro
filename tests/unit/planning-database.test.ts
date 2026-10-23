@@ -90,14 +90,17 @@ beforeAll(async () => {
     create schema auth; create table auth.users(id uuid primary key);
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to authenticated, anon; grant execute on function auth.uid() to authenticated, anon;
-    create table public.projects(id uuid primary key, brand text, owner_id uuid);
+    create table public.agencies(id uuid primary key);
+    create table public.projects(id uuid primary key, brand text, owner_id uuid, agency_id uuid references public.agencies);
+    create function public.is_agency_member(a uuid) returns boolean language sql stable as $$ select exists(select 1 from public.projects where agency_id=a and owner_id=auth.uid()) $$;
     create table public.products(id uuid primary key, project_id uuid references public.projects, name text, category text, subtype text, ingredients text);
     create table public.source_files(id uuid primary key, project_id uuid references public.projects, product_id uuid, filename text);
     create table public.evidence(id uuid primary key, source_file_id uuid references public.source_files, review_status text, evidence_type text, source_excerpt text, suggested_claim text, page_number integer);
     create function public.can_access_project(p uuid) returns boolean language sql stable as $$ select exists(select 1 from public.projects where id=p and owner_id=auth.uid()) $$;
-    grant select on public.projects, public.products, public.source_files, public.evidence to authenticated;
+    grant select on public.projects, public.products, public.source_files, public.evidence, public.agencies to authenticated;
     insert into auth.users values ('${u1}'),('${u2}');
-    insert into public.projects values ('${p1}','검증','${u1}'),('${p2}','타사','${u2}');
+    insert into public.agencies values ('c4000000-0000-4000-8000-000000000001'),('c4000000-0000-4000-8000-000000000002');
+    insert into public.projects values ('${p1}','검증','${u1}','c4000000-0000-4000-8000-000000000001'),('${p2}','타사','${u2}','c4000000-0000-4000-8000-000000000002');
     insert into public.products values ('${productId}','${p1}','검증 제품','페이스 클렌징','폼','정제수, 글리세린');
     insert into public.source_files values ('${demoFile.id}','${p1}','${productId}','${demoFile.filename}');
   `);
@@ -113,6 +116,12 @@ beforeAll(async () => {
   await db.exec(
     await readFile(
       new URL("../../docs/기획서버전저장추가안.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL("../../docs/AI기획요청보호추가안.sql", import.meta.url),
       "utf8",
     ),
   );
@@ -292,5 +301,195 @@ describe("로컬 PostgreSQL 기획서 버전 보호", () => {
     expect(
       (await db.query("select * from public.planning_versions")).rows,
     ).toHaveLength(0);
+  });
+});
+
+async function reserve(
+  base: string | null = null,
+  operation = "generate",
+  section: string | null = null,
+  overrides: Record<string, unknown> = {},
+) {
+  const row = {
+    id: crypto.randomUUID(),
+    agency_id: "c4000000-0000-4000-8000-000000000001",
+    project_id: p1,
+    product_id: productId,
+    requested_by: u1,
+    operation,
+    base_version_id: base,
+    section_id: section,
+    input_hash: "a".repeat(64),
+    model: "test/mock-model",
+    ...overrides,
+  };
+  const columns = Object.keys(row);
+  const values = Object.values(row);
+  return (
+    await db.query<{
+      id: string;
+      created_at: string;
+      expires_at: string;
+      status: string;
+    }>(
+      `insert into public.planning_generation_requests(${columns.join(",")}) values(${values.map((_, i) => "$" + (i + 1)).join(",")}) returning *`,
+      values,
+    )
+  ).rows[0];
+}
+describe("AI 요청 예약과 결과 저장 검토안", () => {
+  it("제품별로 하나만 예약하며 같은 요청 번호도 중복 등록하지 않는다", async () => {
+    const r = await reserve();
+    await blocked(() => reserve());
+    await blocked(() => reserve(null, "generate", null, { id: r.id }));
+  });
+  it("다른 회사·비로그인 사용자에게 예약을 노출하지 않는다", async () => {
+    await reserve();
+    await db.exec(`set local request.jwt.claim.sub='${u2}'`);
+    expect(
+      (await db.query("select * from public.planning_generation_requests"))
+        .rows,
+    ).toHaveLength(0);
+    await blocked(() => reserve(null, "generate", null, { requested_by: u2 }));
+    await db.exec("set local role anon");
+    await blocked(() =>
+      db.query("select * from public.planning_generation_requests"),
+    );
+  });
+  it("예약 시각 위조·승인된 구좌 재생성·오래된 기준 버전을 막는다", async () => {
+    const doc = makeDocument();
+    const v1 = await append(doc);
+    const v2 = await append(
+      changeApproval(doc, doc.sections[0].id, true, u1),
+      2,
+      v1.id,
+      "approve",
+      doc.sections[0].id,
+    );
+    await blocked(() => reserve(v1.id));
+    await blocked(() =>
+      reserve(v2.id, "regenerate_section", doc.sections[0].id),
+    );
+    const r = await reserve(v2.id, "regenerate_section", doc.sections[1].id, {
+      created_at: "2000-01-01T00:00:00Z",
+      expires_at: "2100-01-01T00:00:00Z",
+    });
+    expect(r.created_at).not.toContain("2000");
+    expect(
+      new Date(r.expires_at).getTime() - new Date(r.created_at).getTime(),
+    ).toBe(15 * 60 * 1000);
+  });
+  it("끝난 요청을 다시 실행 상태로 바꾸거나 삭제할 수 없다", async () => {
+    const r = await reserve();
+    await db.query(
+      "update public.planning_generation_requests set status='failed' where id=$1",
+      [r.id],
+    );
+    await blocked(() =>
+      db.query(
+        "update public.planning_generation_requests set status='running' where id=$1",
+        [r.id],
+      ),
+    );
+    await blocked(() =>
+      db.query("delete from public.planning_generation_requests where id=$1", [
+        r.id,
+      ]),
+    );
+    await blocked(() =>
+      db.query(
+        "update public.planning_generation_requests set input_hash=$2 where id=$1",
+        [r.id, "b".repeat(64)],
+      ),
+    );
+  });
+  it("기획 버전과 완료 영수증을 함께 저장하고 재확인은 버전을 추가하지 않는다", async () => {
+    const r = await reserve();
+    const first = await db.query<{ id: string }>(
+      "select * from public.complete_planning_generation($1,$2)",
+      [r.id, JSON.stringify(makeDocument())],
+    );
+    const again = await db.query<{ id: string }>(
+      "select * from public.complete_planning_generation($1,$2)",
+      [r.id, JSON.stringify(makeDocument())],
+    );
+    expect(again.rows[0].id).toBe(first.rows[0].id);
+    expect(
+      (await db.query("select * from public.planning_versions")).rows,
+    ).toHaveLength(1);
+    expect(
+      (
+        await db.query<{ status: string }>(
+          "select status from public.planning_generation_requests where id=$1",
+          [r.id],
+        )
+      ).rows[0].status,
+    ).toBe("completed");
+  });
+  it("기준 버전이 달라지면 결과 저장을 롤백하고 완료로 표시하지 않는다", async () => {
+    const doc = makeDocument();
+    const v1 = await append(doc);
+    const r = await reserve(v1.id);
+    const changed = structuredClone(doc);
+    changed.coreUsp = "동시 편집";
+    await append(changed, 2, v1.id, "edit");
+    await blocked(() =>
+      db.query("select * from public.complete_planning_generation($1,$2)", [
+        r.id,
+        JSON.stringify(doc),
+      ]),
+    );
+    expect(
+      (await db.query("select * from public.planning_versions")).rows,
+    ).toHaveLength(2);
+    expect(
+      (
+        await db.query<{ status: string }>(
+          "select status from public.planning_generation_requests where id=$1",
+          [r.id],
+        )
+      ).rows[0].status,
+    ).toBe("running");
+  });
+  it("같은 회사 하루 예약 상한은 실패한 요청도 포함한다", async () => {
+    for (let i = 0; i < 20; i++) {
+      const r = await reserve(null, "generate", null, {
+        created_at: "2000-01-01T00:00:00Z",
+      });
+      await db.query(
+        "update public.planning_generation_requests set status='failed' where id=$1",
+        [r.id],
+      );
+    }
+    const error = await blocked(() => reserve());
+    expect(String(error)).toContain("Daily generation request limit");
+  });
+  it("활성 요청은 조기 만료할 수 없고, 만료된 작업은 결과를 저장하지 못한다", async () => {
+    const r = await reserve();
+    await blocked(() =>
+      db.query(
+        "update public.planning_generation_requests set status='expired' where id=$1",
+        [r.id],
+      ),
+    );
+    await db.exec("reset role; set local session_replication_role='replica'");
+    await db.query(
+      "update public.planning_generation_requests set expires_at=now()-interval '1 minute' where id=$1",
+      [r.id],
+    );
+    await db.exec(
+      "set local session_replication_role='origin'; set local role authenticated",
+    );
+    await db.query(
+      "update public.planning_generation_requests set status='expired' where id=$1",
+      [r.id],
+    );
+    await blocked(() =>
+      db.query("select * from public.complete_planning_generation($1,$2)", [
+        r.id,
+        JSON.stringify(makeDocument()),
+      ]),
+    );
+    await reserve();
   });
 });

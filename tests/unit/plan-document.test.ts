@@ -37,6 +37,11 @@ describe("기획서 편집과 승인", () => {
   it("직접 기획은 거품 제품의 필수 구좌와 후반 순서를 유지하고 가상 효능을 넣지 않는다", () => {
     const plan = manualPlan(basis);
     expect(plan.sections.some((s) => s.type === "foam")).toBe(true);
+    expect(
+      manualPlan({ ...basis, subtype: "팩 클렌저(거품형)" }).sections.some(
+        (s) => s.type === "foam",
+      ),
+    ).toBe(true);
     expect(plan.sections.slice(-4).map((s) => s.type)).toEqual([
       "recommendation",
       "closing",

@@ -12,6 +12,10 @@ const ids = {
   user: "b3000000-0000-4000-8000-000000000001",
 };
 const state = vi.hoisted(() => ({
+  find: vi.fn(),
+  reserve: vi.fn(),
+  finish: vi.fn(),
+  fail: vi.fn(),
   ai: false,
   regenerate: vi.fn(),
   auth: true,
@@ -21,9 +25,16 @@ const state = vi.hoisted(() => ({
   conflict: false,
   generate: vi.fn(),
 }));
+vi.mock("@/lib/generation-requests", async (original) => ({
+  ...(await original<typeof import("@/lib/generation-requests")>()),
+  findGeneration: state.find,
+  reserveGeneration: state.reserve,
+  completeGeneration: state.finish,
+  failGeneration: state.fail,
+}));
 vi.mock("@/lib/ai", () => ({
   aiEnabled: () => state.ai,
-  configuredModel: vi.fn(),
+  configuredModel: vi.fn().mockResolvedValue("test/mock-model"),
   generatePlan: state.generate,
   regenerateSection: state.regenerate,
 }));
@@ -118,6 +129,7 @@ const req = (body: Record<string, unknown>, origin = "https://app.example") =>
     method: "POST",
     headers: { origin, "Content-Type": "application/json" },
     body: JSON.stringify({
+      requestId: "b9000000-0000-4000-8000-000000000001",
       projectId: ids.project,
       productId: ids.product,
       ...body,
@@ -159,8 +171,126 @@ beforeEach(() => {
   state.conflict = false;
   vi.stubEnv("ENABLE_PLAN_STORAGE", "true");
   vi.clearAllMocks();
+  state.find.mockResolvedValue(null);
+  state.reserve.mockResolvedValue(undefined);
+  state.fail.mockResolvedValue(true);
+  state.finish.mockImplementation(async (_client, intent, snapshot) => {
+    const previous = state.versions.at(-1);
+    const version = {
+      ...seed(),
+      id: crypto.randomUUID(),
+      revision: (previous?.revision ?? 0) + 1,
+      parent_id: previous?.id ?? null,
+      snapshot,
+      action:
+        intent.operation === "regenerate_section"
+          ? "regenerate_section"
+          : previous
+            ? "generate"
+            : "create",
+      changed_section_id: intent.sectionId ?? null,
+    } as PlanVersion;
+    state.versions.push(version);
+    return version;
+  });
 });
 describe("기획 버전 API", () => {
+  it("예약하지 못하면 AI를 호출하지 않는다", async () => {
+    const v = seed();
+    state.versions = [v];
+    state.ai = true;
+    state.reserve.mockRejectedValue(new Error("예약 실패"));
+    expect(
+      (
+        await POST(
+          req({
+            operation: "regenerate_section",
+            baseId: v.id,
+            sectionId: v.snapshot.sections[1].id,
+            consent: true,
+          }),
+        )
+      ).status,
+    ).toBe(502);
+    expect(state.regenerate).not.toHaveBeenCalled();
+    expect(state.finish).not.toHaveBeenCalled();
+  });
+  it("상태 확인 요청은 기록이 없어도 AI를 새로 시작하지 않는다", async () => {
+    const v = seed();
+    state.versions = [v];
+    state.ai = true;
+    expect(
+      (
+        await POST(
+          req({
+            operation: "regenerate_section",
+            baseId: v.id,
+            sectionId: v.snapshot.sections[1].id,
+            checkOnly: true,
+          }),
+        )
+      ).status,
+    ).toBe(404);
+    expect(state.reserve).not.toHaveBeenCalled();
+    expect(state.regenerate).not.toHaveBeenCalled();
+  });
+  it("완료 요청 재확인은 이전 기준 버전이어도 같은 결과를 반환한다", async () => {
+    const v = seed();
+    state.versions = [v, { ...v, id: crypto.randomUUID(), revision: 2 }];
+    state.find.mockResolvedValue(v);
+    const response = await POST(
+      req({ operation: "generate", baseId: null, checkOnly: true }),
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).replayed).toBe(true);
+    expect(state.reserve).not.toHaveBeenCalled();
+    expect(state.generate).not.toHaveBeenCalled();
+  });
+  it("완료 응답 유실 시 예약을 실패로 바꾸어 새 호출을 허용하지 않는다", async () => {
+    const v = seed();
+    state.versions = [v];
+    state.ai = true;
+    state.regenerate.mockResolvedValue({
+      ...v.snapshot.sections[1],
+      headline: "변경",
+    });
+    state.finish.mockRejectedValue(new Error("저장 응답 유실"));
+    expect(
+      (
+        await POST(
+          req({
+            operation: "regenerate_section",
+            baseId: v.id,
+            sectionId: v.snapshot.sections[1].id,
+            consent: true,
+          }),
+        )
+      ).status,
+    ).toBe(503);
+    expect(state.regenerate).toHaveBeenCalledTimes(1);
+    expect(state.fail).not.toHaveBeenCalled();
+  });
+  it("입력량 초과는 예약과 유료 호출 전에 거절한다", async () => {
+    const v = seed();
+    v.snapshot.basis.ingredients = "가".repeat(24000);
+    state.versions = [v];
+    state.ai = true;
+    expect(
+      (
+        await POST(
+          req({
+            operation: "regenerate_section",
+            baseId: v.id,
+            sectionId: v.snapshot.sections[1].id,
+            consent: true,
+          }),
+        )
+      ).status,
+    ).toBe(413);
+    expect(state.reserve).not.toHaveBeenCalled();
+    expect(state.regenerate).not.toHaveBeenCalled();
+  });
+
   it("구좌 재생성은 지정한 승인 전 구좌만 바꾸고 다른 승인을 보존한다", async () => {
     const v = seed();
     v.snapshot = changeApproval(
@@ -242,6 +372,7 @@ describe("기획 버전 API", () => {
       ).status,
     ).toBe(422);
     expect(state.inserts).toHaveLength(0);
+    expect(state.finish).not.toHaveBeenCalled();
   });
   it("출처·로그인·회사 경계를 확인하고 저장하지 않는다", async () => {
     expect(
