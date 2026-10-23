@@ -86,7 +86,7 @@ test("실제 편집 화면에서 저장·승인·해제·이전 버전 복구와
     versions.push(version);
     await route.fulfill({ json: { version } });
   });
-  await page.route("**/__planning-test", (route) =>
+  await page.route("**/__planning-test*", (route) =>
     route.fulfill({
       contentType: "text/html",
       body: `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><main style="max-width:1000px;margin:auto;padding:20px"><div id="root"></div></main><script>${bundle.replace(/<\/script/gi, "<\\/script")}</script></body></html>`,
@@ -180,7 +180,7 @@ test("저장 충돌이 발생해도 수정 내용을 유지하고 백업할 수 
           },
     );
   });
-  await page.route("**/__planning-test", (route) =>
+  await page.route("**/__planning-test*", (route) =>
     route.fulfill({
       contentType: "text/html",
       body: `<!doctype html><html><body><div id="root"></div><script>${bundle.replace(/<\/script/gi, "<\\/script")}</script></body></html>`,
@@ -201,4 +201,94 @@ test("저장 충돌이 발생해도 수정 내용을 유지하고 백업할 수 
   expect((await downloadPromise).suggestedFilename()).toBe(
     "미저장_기획_백업.json",
   );
+});
+
+test("AI 완료 응답을 놓쳐도 같은 요청 상태만 확인하고 재호출하지 않는다", async ({
+  page,
+}) => {
+  const first: PlanVersion = {
+    id: crypto.randomUUID(),
+    project_id: "d1000000-0000-4000-8000-000000000001",
+    product_id: basis.productId,
+    revision: 1,
+    action: "create",
+    parent_id: null,
+    restored_from: null,
+    changed_section_id: null,
+    snapshot: createDocument(manualPlan(basis), basis, []),
+    created_by: user,
+    created_at: new Date().toISOString(),
+  };
+  let latest = first;
+  let requestId: string | null = null;
+  let providerCalls = 0;
+  let checks = 0;
+  await page.route("**/api/plans", (route) => {
+    const input = route.request().postDataJSON();
+    if (input.operation === "read")
+      return route.fulfill({
+        json: {
+          version: latest,
+          latestId: latest.id,
+          history: latest.id === first.id ? [first] : [latest, first],
+        },
+      });
+    if (input.checkOnly) {
+      checks++;
+      expect(input.requestId).toBe(requestId);
+      return route.fulfill({ json: { version: latest, replayed: true } });
+    }
+    if (input.operation === "regenerate_section") {
+      providerCalls++;
+      requestId = input.requestId;
+      latest = {
+        ...structuredClone(first),
+        id: crypto.randomUUID(),
+        revision: 2,
+        parent_id: first.id,
+        action: "regenerate_section",
+        changed_section_id: input.sectionId,
+      };
+      latest.snapshot.sections[0].headline = "저장된 생성 결과";
+      return route.fulfill({
+        status: 503,
+        json: { error: "결과 저장의 응답을 확인하지 못했습니다." },
+      });
+    }
+    return route.fulfill({
+      status: 400,
+      json: { error: "예상하지 못한 요청" },
+    });
+  });
+  await page.route("**/__planning-test*", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script>${bundle.replace(/<\/script/gi, "<\\/script")}</script></body></html>`,
+    }),
+  );
+  await page.goto("/__planning-test?ai=1");
+  await page
+    .getByRole("checkbox", { name: /제품 브리프와 승인된 근거/ })
+    .check();
+  await page
+    .getByRole("button", { name: "이 구좌만 AI 재생성", exact: true })
+    .first()
+    .click();
+  await expect(page.getByRole("alert")).toContainText("응답");
+  await expect(
+    page
+      .getByRole("button", { name: "이 구좌만 AI 재생성", exact: true })
+      .first(),
+  ).toBeDisabled();
+  await page
+    .getByRole("button", { name: "이전 요청 상태 확인", exact: true })
+    .click();
+  await expect(
+    page.getByRole("textbox", { name: "구좌 1 제목", exact: true }),
+  ).toHaveValue("저장된 생성 결과");
+  await expect(
+    page.getByRole("region", { name: "AI 요청 확인", exact: true }),
+  ).toHaveCount(0);
+  expect(providerCalls).toBe(1);
+  expect(checks).toBe(1);
 });

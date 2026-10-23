@@ -92,6 +92,10 @@ test("모든 품목의 직접 입력과 거품 질문이 동작한다", async ({
   await page.goto("/brief-preview");
   await expect(page.getByLabel("거품 특성", { exact: true })).toBeVisible();
   await page
+    .getByLabel("세부 품목", { exact: true })
+    .selectOption("팩 클렌저(거품형)");
+  await expect(page.getByLabel("거품 특성", { exact: true })).toBeVisible();
+  await page
     .getByLabel("대카테고리", { exact: true })
     .selectOption("헤어·바디");
   await expect(page.getByLabel("거품 특성", { exact: true })).toBeVisible();
