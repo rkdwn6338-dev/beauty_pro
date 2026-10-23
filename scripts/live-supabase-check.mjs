@@ -36,6 +36,24 @@ assert.equal(
   "기획서 버전의 테이블 접근 권한 차단",
 );
 console.log("통과: 비로그인 기획서 버전 조회 차단");
+const receipt = await fetch(
+  `${base}/rest/v1/planning_generation_requests?select=id&limit=1`,
+  { headers },
+);
+assert([401, 403].includes(receipt.status), "AI 요청 기록 비로그인 접근 차단");
+assert.equal((await receipt.json()).code, "42501");
+console.log("통과: 비로그인 AI 요청 기록 조회 차단");
+const completion = await fetch(`${base}/rest/v1/rpc/complete_planning_generation`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    p_request_id: "00000000-0000-4000-8000-000000000000",
+    p_snapshot: {},
+  }),
+});
+assert([401, 403].includes(completion.status), "AI 결과 완료 함수 비로그인 접근 차단");
+assert.equal((await completion.json()).code, "42501");
+console.log("통과: 비로그인 AI 결과 완료 함수 접근 차단");
 const result = await fetch(
   `${base}/storage/v1/object/source-documents/00000000-0000-4000-8000-000000000000/probe.pdf`,
   {
