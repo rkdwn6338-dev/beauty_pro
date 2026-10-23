@@ -35,6 +35,34 @@ export const planSchema = z.object({
   cautions: z.array(z.string().max(2000)).max(20),
 });
 export type Plan = z.infer<typeof planSchema>;
+export function sectionIssues(
+  section: Plan["sections"][number],
+  evidence: { id: string; source_excerpt: string }[],
+): string[] {
+  const issues: string[] = [];
+  const byId = new Map(evidence.map((item) => [item.id, item]));
+  if (section.evidenceIds.some((id) => !byId.has(id)))
+    issues.push("승인되지 않은 근거가 연결됐습니다.");
+  if (section.type === "clinical" && section.evidenceIds.length === 0)
+    issues.push("시험 결과 구좌에는 승인된 근거가 필요합니다.");
+  const copy = section.headline + " " + section.body;
+  if (/치료|완치|부작용\s*없|100\s*%\s*안전/.test(copy))
+    issues.push("치료·안전성 보장 카피가 포함됐습니다.");
+  const source = section.evidenceIds
+    .map((id) => byId.get(id)?.source_excerpt ?? "")
+    .join(" ")
+    .replace(/,/g, "");
+  // 효능 수치는 해당 구좌에 연결된 원문 인용에서만 가져옵니다.
+  const sourceQuantities = new Set(
+    quantities(source).map((quantity) =>
+      quantity.replace(/\s/g, "").toLowerCase(),
+    ),
+  );
+  for (const claim of quantities(copy))
+    if (!sourceQuantities.has(claim.replace(/\s/g, "").toLowerCase()))
+      issues.push("연결된 근거에 없는 수치·단위가 카피에 포함됐습니다.");
+  return [...new Set(issues)];
+}
 export function planIssues(
   plan: Plan,
   product: {
@@ -61,29 +89,8 @@ export function planIssues(
     !plan.sections.some((s) => s.type === "foam")
   )
     issues.push("거품형 세정 제품에 거품 소구가 누락됐습니다.");
-  const byId = new Map(evidence.map((item) => [item.id, item]));
-  for (const section of plan.sections) {
-    if (section.evidenceIds.some((id) => !byId.has(id)))
-      issues.push("승인되지 않은 근거가 연결됐습니다.");
-    if (section.type === "clinical" && section.evidenceIds.length === 0)
-      issues.push("시험 결과 구좌에는 승인된 근거가 필요합니다.");
-    const copy = section.headline + " " + section.body;
-    if (/치료|완치|부작용\s*없|100\s*%\s*안전/.test(copy))
-      issues.push("치료·안전성 보장 카피가 포함됐습니다.");
-    const source = section.evidenceIds
-      .map((id) => byId.get(id)?.source_excerpt ?? "")
-      .join(" ")
-      .replace(/,/g, "");
-    // 효능 수치는 해당 구좌에 연결된 원문 인용에서만 가져옵니다.
-    const sourceQuantities = new Set(
-      quantities(source).map((quantity) =>
-        quantity.replace(/\s/g, "").toLowerCase(),
-      ),
-    );
-    for (const claim of quantities(copy))
-      if (!sourceQuantities.has(claim.replace(/\s/g, "").toLowerCase()))
-        issues.push("연결된 근거에 없는 수치·단위가 카피에 포함됐습니다.");
-  }
+  for (const section of plan.sections)
+    issues.push(...sectionIssues(section, evidence));
   const ingredients = new Set(
     (product.ingredients ?? "")
       .normalize("NFKC")

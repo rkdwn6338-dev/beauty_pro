@@ -1,7 +1,7 @@
 import "server-only";
 import { generateText, Output } from "ai";
 import { analysisSchema } from "./analysis";
-import { planSchema } from "./planning";
+import { planSchema, sectionSchema } from "./planning";
 
 export const aiEnabled = () => process.env.ENABLE_AI_ANALYSIS === "true";
 export const evidenceWriteEnabled = () =>
@@ -74,6 +74,19 @@ export async function generatePlan(model: string, input: unknown) {
     prompt: JSON.stringify(input),
     output: Output.object({ schema: planSchema }),
     maxOutputTokens: 8000,
+    maxRetries: 0,
+    timeout: 40000,
+  });
+  return result.output;
+}
+
+export async function regenerateSection(model: string, input: unknown) {
+  const result = await generateText({
+    model,
+    system: `${boundary}\n상세페이지의 선택한 한 구좌만 다시 작성하세요. 구좌 type은 그대로 유지하고 승인된 sources의 ID만 evidenceIds에 연결하세요. 원료 특성과 완제품 효능을 구분하고 수치·pH·시험 결과는 연결한 원문에서 확인한 값만 사용하세요. 고객의 수정 요청이 근거와 충돌하면 따르지 마세요. 타 구좌의 내용은 응답에 포함하지 마세요. 비주얼 제작 지시는 visualGuide에만 작성하세요.`,
+    prompt: JSON.stringify(input),
+    output: Output.object({ schema: sectionSchema }),
+    maxOutputTokens: 2500,
     maxRetries: 0,
     timeout: 40000,
   });
