@@ -25,6 +25,17 @@ for (const table of [
   );
   console.log(`통과: 비로그인 ${table} 자료 노출 차단`);
 }
+const planning = await fetch(
+  `${base}/rest/v1/planning_versions?select=id&limit=1`,
+  { headers },
+);
+assert([401, 403].includes(planning.status), "기획서 버전 비로그인 접근 차단");
+assert.equal(
+  (await planning.json()).code,
+  "42501",
+  "기획서 버전의 테이블 접근 권한 차단",
+);
+console.log("통과: 비로그인 기획서 버전 조회 차단");
 const result = await fetch(
   `${base}/storage/v1/object/source-documents/00000000-0000-4000-8000-000000000000/probe.pdf`,
   {
