@@ -121,7 +121,9 @@ export default async function ProjectPage({
           projectId={id}
           productId={product?.id ?? null}
           storageReady={process.env.ENABLE_PLAN_STORAGE === "true"}
-          aiReady={aiEnabled()}
+          aiReady={
+            aiEnabled() && process.env.ENABLE_GENERATION_GUARD === "true"
+          }
         />
       ) : analysisTab ? (
         <AnalysisWorkspace
