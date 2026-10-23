@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { projectAccess } from "@/lib/auth";
 import { BriefForm } from "@/components/brief-form";
 import { FileManager } from "@/components/file-manager";
+import { AnalysisWorkspace } from "@/components/analysis-workspace";
+import { aiEnabled, evidenceWriteEnabled } from "@/lib/ai";
 import { ArrowLeft, FileText, UploadCloud, Sparkles } from "lucide-react";
 export default async function ProjectPage({
   params,
@@ -34,6 +36,32 @@ export default async function ProjectPage({
   if (productError || fileError)
     throw new Error("제품 자료를 불러오지 못했습니다.");
   const product = products?.[0];
+  const analysisTab = tab === "analysis";
+  const fileIds = (files ?? []).map((file) => file.id);
+  const [
+    { data: evidence, error: evidenceError },
+    { data: jobs, error: jobError },
+  ] =
+    analysisTab && fileIds.length
+      ? await Promise.all([
+          access.supabase
+            .from("evidence")
+            .select("*")
+            .in("source_file_id", fileIds)
+            .order("created_at", { ascending: false }),
+          access.supabase
+            .from("analysis_jobs")
+            .select("id,source_file_id,status,error_message,created_at")
+            .in("source_file_id", fileIds)
+            .order("created_at", { ascending: false })
+            .limit(30),
+        ])
+      : [
+          { data: [], error: null },
+          { data: [], error: null },
+        ];
+  if (evidenceError || jobError)
+    throw new Error("분석 결과를 불러오지 못했습니다.");
   return (
     <>
       <Link className="text-link" href="/workspace">
@@ -51,8 +79,8 @@ export default async function ProjectPage({
       <nav className="project-tabs" aria-label="프로젝트 작업">
         <Link
           href={`/workspace/${id}`}
-          className={tab !== "files" ? "selected" : ""}
-          aria-current={tab !== "files" ? "page" : undefined}
+          className={tab !== "files" && !analysisTab ? "selected" : ""}
+          aria-current={tab !== "files" && !analysisTab ? "page" : undefined}
         >
           <FileText size={17} />
           제품 브리프
@@ -65,12 +93,26 @@ export default async function ProjectPage({
           <UploadCloud size={18} />
           자료 업로드<span className="count">{files?.length ?? 0}</span>
         </Link>
-        <span className="disabled-tab">
+        <Link
+          href={`/workspace/${id}?tab=analysis`}
+          className={analysisTab ? "selected" : ""}
+          aria-current={analysisTab ? "page" : undefined}
+        >
           <Sparkles size={16} />
-          분석·기획<span className="badge neutral">준비 중</span>
-        </span>
+          분석·기획
+        </Link>
       </nav>
-      {tab === "files" ? (
+      {analysisTab ? (
+        <AnalysisWorkspace
+          projectId={id}
+          productId={product?.id ?? null}
+          files={files ?? []}
+          evidence={evidence ?? []}
+          jobs={jobs ?? []}
+          aiReady={aiEnabled()}
+          writeReady={evidenceWriteEnabled()}
+        />
+      ) : tab === "files" ? (
         <FileManager
           projectId={id}
           productId={product?.id ?? null}
