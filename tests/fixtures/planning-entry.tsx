@@ -6,6 +6,6 @@ createRoot(document.getElementById("root")!).render(
     projectId="d1000000-0000-4000-8000-000000000001"
     productId="d2000000-0000-4000-8000-000000000001"
     storageReady
-    aiReady={false}
+    aiReady={new URLSearchParams(window.location.search).get("ai") === "1"}
   />,
 );
