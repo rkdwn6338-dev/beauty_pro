@@ -16,6 +16,7 @@ export default function Home() {
         <Logo />
         <nav>
           <Link href="/brief-preview">브리프 체험</Link>
+          <Link href="/analysis-preview">근거 검토 체험</Link>
           <Link className="button secondary small-button" href="/login">
             로그인
             <ArrowUpRight size={16} />
