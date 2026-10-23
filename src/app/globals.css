@@ -1907,3 +1907,141 @@ select {
     animation: none !important;
   }
 }
+
+.planning-editor {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.planning-editor .panel {
+  padding: 30px;
+  min-width: 0;
+}
+.plan-fields {
+  border: 0;
+  margin: 18px 0;
+  padding: 0;
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.plan-fields > label,
+.planning-version-bar > label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.plan-fields input:not([type="checkbox"]),
+.plan-fields textarea,
+.planning-version-bar select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  padding: 12px;
+}
+.plan-fields textarea {
+  resize: vertical;
+  line-height: 1.8;
+}
+.plan-fields:disabled input,
+.plan-fields:disabled textarea {
+  background: var(--background);
+}
+.plan-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.plan-card-heading h3 {
+  overflow-wrap: anywhere;
+}
+.plan-card-heading .eyebrow {
+  margin-bottom: 6px;
+}
+.plan-edit-card.is-approved {
+  border-left: 4px solid var(--green);
+}
+.plan-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+  margin: 20px 0;
+}
+.plan-progress progress {
+  accent-color: var(--green);
+  flex: 1;
+  max-width: 340px;
+}
+.planning-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 15px 0;
+}
+.plan-source {
+  margin-top: 12px;
+  align-items: flex-start;
+}
+.plan-source small {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.planning-editor details {
+  margin-top: 18px;
+}
+.planning-editor summary {
+  cursor: pointer;
+  color: var(--green);
+  font-weight: 500;
+}
+.planning-editor blockquote {
+  margin: 18px 0;
+  padding: 15px;
+  border-left: 3px solid var(--line);
+  background: var(--background);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.planning-editor .plan-overview {
+  background: var(--sage);
+}
+@media (max-width: 640px) {
+  .planning-editor .panel {
+    padding: 20px;
+  }
+  .plan-card-heading {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .planning-toolbar .button {
+    white-space: normal;
+    flex: 1 1 180px;
+  }
+}
+.plan-regenerate {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 20px;
+}
+.plan-regenerate label {
+  display: grid;
+  gap: 8px;
+}
+.plan-regenerate textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
+}
+.plan-regenerate button {
+  margin: 12px 0;
+}
