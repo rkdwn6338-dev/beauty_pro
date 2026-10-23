@@ -1,7 +1,7 @@
--- 검토안: 아직 기존 Supabase에 적용하지 않았습니다.
+-- 사용자 승인 후 2026-10-23 적용 완료: phase_c_planning_versions_and_approval_guards
 -- 기존 9개 테이블/데이터/정책을 변경하지 않습니다.
 -- 제품별 기획서 스냅샷을 새 planning_versions 테이블에 추가만 합니다.
--- 적용 후 별도 권한 검증 전까지 ENABLE_PLAN_STORAGE=false 유지.
+-- 실제 Supabase 권한 검사 19개를 통과했습니다. 최초 사용자 계정의 통합 검증은 별도 진행합니다.
 
 create table public.planning_versions (
   id uuid primary key default gen_random_uuid(),
