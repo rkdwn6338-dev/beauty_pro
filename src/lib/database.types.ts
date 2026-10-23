@@ -14,45 +14,6 @@ export type Database = {
   };
   public: {
     Tables: {
-      // Phase C 검토안의 타입입니다. 실제 DB 적용 전 ENABLE_PLAN_STORAGE는 false를 유지합니다.
-      planning_versions: {
-        Row: {
-          id: string;
-          project_id: string;
-          product_id: string;
-          revision: number;
-          parent_id: string | null;
-          restored_from: string | null;
-          action: string;
-          changed_section_id: string | null;
-          snapshot: Json;
-          created_by: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          project_id: string;
-          product_id: string;
-          revision: number;
-          parent_id: string | null;
-          restored_from?: string | null;
-          action: string;
-          changed_section_id?: string | null;
-          snapshot: Json;
-          created_by: string;
-          created_at?: string;
-        };
-        Update: { [_ in never]: never };
-        Relationships: [
-          {
-            foreignKeyName: "planning_versions_product_id_fkey";
-            columns: ["product_id"];
-            isOneToOne: false;
-            referencedRelation: "products";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
       agencies: {
         Row: {
           created_at: string;
@@ -175,6 +136,77 @@ export type Database = {
             columns: ["source_file_id"];
             isOneToOne: false;
             referencedRelation: "source_files";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      planning_versions: {
+        Row: {
+          action: string;
+          changed_section_id: string | null;
+          created_at: string;
+          created_by: string;
+          id: string;
+          parent_id: string | null;
+          product_id: string;
+          project_id: string;
+          restored_from: string | null;
+          revision: number;
+          snapshot: Json;
+        };
+        Insert: {
+          action: string;
+          changed_section_id?: string | null;
+          created_at?: string;
+          created_by: string;
+          id?: string;
+          parent_id?: string | null;
+          product_id: string;
+          project_id: string;
+          restored_from?: string | null;
+          revision: number;
+          snapshot: Json;
+        };
+        Update: {
+          action?: string;
+          changed_section_id?: string | null;
+          created_at?: string;
+          created_by?: string;
+          id?: string;
+          parent_id?: string | null;
+          product_id?: string;
+          project_id?: string;
+          restored_from?: string | null;
+          revision?: number;
+          snapshot?: Json;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "planning_versions_parent_id_fkey";
+            columns: ["parent_id"];
+            isOneToOne: false;
+            referencedRelation: "planning_versions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "planning_versions_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "planning_versions_project_id_fkey";
+            columns: ["project_id"];
+            isOneToOne: false;
+            referencedRelation: "projects";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "planning_versions_restored_from_fkey";
+            columns: ["restored_from"];
+            isOneToOne: false;
+            referencedRelation: "planning_versions";
             referencedColumns: ["id"];
           },
         ];
