@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { PlanEditor } from "./plan-editor";
 import {
   planDocumentSchema,
@@ -48,6 +48,8 @@ export function PlanningWorkspace({
   const [loaded, setLoaded] = useState(!storageReady || !productId);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const pendingGeneration = useRef<Record<string, unknown> | null>(null);
+  const [hasPendingGeneration, setHasPendingGeneration] = useState(false);
   const [consent, setConsent] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [historyBefore, setHistoryBefore] = useState<number | null>(null);
@@ -169,7 +171,30 @@ export function PlanningWorkspace({
     setHistoryBefore(data.history.at(-1)?.revision ?? null);
   }
   async function save(operation: string, extra: Record<string, unknown> = {}) {
-    const data = await call({ operation, baseId: latestId, ...extra });
+    const body: Record<string, unknown> = {
+      operation,
+      baseId: latestId,
+      ...extra,
+    };
+    const generation =
+      operation === "generate" || operation === "regenerate_section";
+    if (generation) {
+      if (pendingGeneration.current)
+        throw new Error("이전 AI 요청 상태를 먼저 확인해 주세요.");
+      body.requestId = crypto.randomUUID();
+      pendingGeneration.current = body;
+      setHasPendingGeneration(true);
+    }
+    const data = await call(body);
+    applySaved(data.version);
+    if (data.replayed) await read(data.version.id);
+    if (generation) {
+      pendingGeneration.current = null;
+      setHasPendingGeneration(false);
+    }
+  }
+  function applySaved(next: PlanVersion) {
+    const data = { version: next };
     accept(data.version);
     setLatestId(data.version.id);
     setHistory((rows) => [
@@ -181,7 +206,7 @@ export function PlanningWorkspace({
         created_by: data.version.created_by,
         restored_from: data.version.restored_from,
       },
-      ...rows,
+      ...rows.filter((row) => row.id !== data.version.id),
     ]);
     setMessage(
       `버전 ${data.version.revision}으로 저장했습니다. 이전 버전은 그대로 보관됩니다.`,
@@ -224,7 +249,13 @@ export function PlanningWorkspace({
               <button
                 className="button primary"
                 disabled={
-                  busy || dirty || !loaded || !aiReady || !consent || historical
+                  busy ||
+                  dirty ||
+                  !loaded ||
+                  !aiReady ||
+                  !consent ||
+                  historical ||
+                  hasPendingGeneration
                 }
                 onClick={() => {
                   if (
@@ -279,6 +310,55 @@ export function PlanningWorkspace({
         )}
         {message && <p className="notice">{message}</p>}
       </div>
+      {hasPendingGeneration && (
+        <section className="panel" aria-label="AI 요청 확인">
+          <h3>이전 AI 요청 상태를 확인해 주세요.</h3>
+          <p className="small muted">
+            응답을 받지 못했어도 생성 결과가 저장됐을 수 있습니다. 상태 확인은
+            AI를 새로 호출하지 않습니다.
+          </p>
+          <div className="planning-toolbar">
+            <button
+              className="button secondary"
+              disabled={busy || dirty}
+              onClick={() =>
+                act(async () => {
+                  if (!pendingGeneration.current) return;
+                  const data = await call({
+                    ...pendingGeneration.current,
+                    checkOnly: true,
+                  });
+                  applySaved(data.version);
+                  await read(data.version.id);
+                  pendingGeneration.current = null;
+                  setHasPendingGeneration(false);
+                })
+              }
+            >
+              이전 요청 상태 확인
+            </button>
+            <button
+              className="button secondary"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "최신 버전과 이전 요청 결과를 먼저 확인했나요? 새로 생성하면 AI 사용량이 추가될 수 있습니다. 새 요청을 준비할까요?",
+                  )
+                ) {
+                  pendingGeneration.current = null;
+                  setHasPendingGeneration(false);
+                  setMessage(
+                    "새 AI 요청을 준비했습니다. 진행 중인 요청이 있으면 서버에서 추가 호출을 막습니다.",
+                  );
+                }
+              }}
+            >
+              새 AI 요청 준비
+            </button>
+          </div>
+        </section>
+      )}
       {version && draft && (
         <>
           <section className="panel planning-version-bar">
@@ -422,7 +502,7 @@ export function PlanningWorkspace({
             busy={busy}
             locked={historical}
             dirty={dirty}
-            canRegenerate={aiReady && consent}
+            canRegenerate={aiReady && consent && !hasPendingGeneration}
             onRegenerate={(sectionId, instruction) =>
               act(() =>
                 save("regenerate_section", {
