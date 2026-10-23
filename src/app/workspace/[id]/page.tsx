@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { projectAccess } from "@/lib/auth";
 import { BriefForm } from "@/components/brief-form";
 import { FileManager } from "@/components/file-manager";
+import { PlanningWorkspace } from "@/components/planning-workspace";
 import { AnalysisWorkspace } from "@/components/analysis-workspace";
 import { aiEnabled, evidenceWriteEnabled } from "@/lib/ai";
 import { ArrowLeft, FileText, UploadCloud, Sparkles } from "lucide-react";
@@ -37,6 +38,7 @@ export default async function ProjectPage({
     throw new Error("제품 자료를 불러오지 못했습니다.");
   const product = products?.[0];
   const analysisTab = tab === "analysis";
+  const planningTab = tab === "planning";
   const fileIds = (files ?? []).map((file) => file.id);
   const [
     { data: evidence, error: evidenceError },
@@ -79,8 +81,12 @@ export default async function ProjectPage({
       <nav className="project-tabs" aria-label="프로젝트 작업">
         <Link
           href={`/workspace/${id}`}
-          className={tab !== "files" && !analysisTab ? "selected" : ""}
-          aria-current={tab !== "files" && !analysisTab ? "page" : undefined}
+          className={
+            tab !== "files" && !analysisTab && !planningTab ? "selected" : ""
+          }
+          aria-current={
+            tab !== "files" && !analysisTab && !planningTab ? "page" : undefined
+          }
         >
           <FileText size={17} />
           제품 브리프
@@ -99,10 +105,25 @@ export default async function ProjectPage({
           aria-current={analysisTab ? "page" : undefined}
         >
           <Sparkles size={16} />
-          분석·기획
+          자료 분석
+        </Link>
+        <Link
+          href={`/workspace/${id}?tab=planning`}
+          className={planningTab ? "selected" : ""}
+          aria-current={planningTab ? "page" : undefined}
+        >
+          <FileText size={17} />
+          기획서 편집
         </Link>
       </nav>
-      {analysisTab ? (
+      {planningTab ? (
+        <PlanningWorkspace
+          projectId={id}
+          productId={product?.id ?? null}
+          storageReady={process.env.ENABLE_PLAN_STORAGE === "true"}
+          aiReady={aiEnabled()}
+        />
+      ) : analysisTab ? (
         <AnalysisWorkspace
           projectId={id}
           productId={product?.id ?? null}
