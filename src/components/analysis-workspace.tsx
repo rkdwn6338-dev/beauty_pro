@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { EvidenceReview } from "./evidence-review";
@@ -299,86 +300,108 @@ export function AnalysisWorkspace({
           }
         />
       ))}
-      <section className="panel planning-panel">
-        <span className="eyebrow">상세페이지의 이야기</span>
-        <h2>승인된 근거로 기획 초안을 만드세요.</h2>
-        <p className="small muted">
-          전성분과 제품 특징을 함께 분석합니다. 초안은 서버에 저장되지 않으므로
-          내려받아 보관해 주세요. 구좌별 수정·승인·버전 저장은 다음 단계입니다.
-        </p>
-        <button
-          type="button"
-          className="button primary"
-          disabled={
-            pending ||
-            !approved ||
-            (!demo && (!productId || !aiReady || !consent))
-          }
-          onClick={() =>
-            act(async () => {
-              if (demo) {
-                setPlan(demoPlan);
-                setMessage(
-                  "체험용으로 미리 작성한 기획 예시입니다. AI를 호출하지 않았습니다.",
-                );
-              } else {
-                const result = await request("/api/planning", {
-                  projectId,
-                  productId,
-                  consent: true,
-                });
-                setPlan(result.plan);
-                setMessage(
-                  "기획 초안을 만들었습니다. 카피와 근거를 확인해 내려받으세요.",
-                );
-              }
-            })
-          }
-        >
-          {pending ? "처리 중…" : demo ? "기획 예시 보기" : "기획 초안 만들기"}
-        </button>
-        {plan && (
-          <div className="plan-result">
-            <h3>핵심 구매 이유</h3>
-            <p>{plan.coreUsp}</p>
-            <h3>기획 전략</h3>
-            <p>{plan.strategy}</p>
-            <h3>전성분 검토</h3>
-            {plan.ingredientInsights.map((item, i) => (
-              <p key={i}>
-                <strong>{item.ingredient}</strong> · {item.role}
-                <br />
-                <span className="small muted">{item.limitation}</span>
-              </p>
-            ))}
-            {plan.sections.map((section, index) => (
-              <article className="plan-section" key={index}>
-                <span className="eyebrow">구좌 {index + 1}</span>
-                <h3>{section.headline}</h3>
-                <p>{section.body}</p>
-                <p className="small muted">
-                  비주얼 가이드 · {section.visualGuide}
+      {!demo ? (
+        <section className="panel planning-panel">
+          <span className="eyebrow">상세페이지의 이야기</span>
+          <h2>기획서를 작성하고 버전으로 보관하세요.</h2>
+          <p className="small muted">
+            기획서 편집에서 직접 작성하거나 승인된 근거를 바탕으로 AI 초안을
+            만들 수 있습니다.
+          </p>
+          <Link
+            className="button primary"
+            href={`/workspace/${projectId}?tab=planning`}
+          >
+            기획서 편집으로 이동
+          </Link>
+        </section>
+      ) : (
+        <section className="panel planning-panel">
+          <span className="eyebrow">상세페이지의 이야기</span>
+          <h2>승인된 근거로 기획 초안을 만드세요.</h2>
+          <p className="small muted">
+            전성분과 제품 특징을 함께 분석합니다. 초안은 서버에 저장되지
+            않으므로 내려받아 보관해 주세요. 구좌별 수정·승인·버전 저장은 다음
+            단계입니다.
+          </p>
+          <button
+            type="button"
+            className="button primary"
+            disabled={
+              pending ||
+              !approved ||
+              (!demo && (!productId || !aiReady || !consent))
+            }
+            onClick={() =>
+              act(async () => {
+                if (demo) {
+                  setPlan(demoPlan);
+                  setMessage(
+                    "체험용으로 미리 작성한 기획 예시입니다. AI를 호출하지 않았습니다.",
+                  );
+                } else {
+                  const result = await request("/api/planning", {
+                    projectId,
+                    productId,
+                    consent: true,
+                  });
+                  setPlan(result.plan);
+                  setMessage(
+                    "기획 초안을 만들었습니다. 카피와 근거를 확인해 내려받으세요.",
+                  );
+                }
+              })
+            }
+          >
+            {pending
+              ? "처리 중…"
+              : demo
+                ? "기획 예시 보기"
+                : "기획 초안 만들기"}
+          </button>
+          {plan && (
+            <div className="plan-result">
+              <h3>핵심 구매 이유</h3>
+              <p>{plan.coreUsp}</p>
+              <h3>기획 전략</h3>
+              <p>{plan.strategy}</p>
+              <h3>전성분 검토</h3>
+              {plan.ingredientInsights.map((item, i) => (
+                <p key={i}>
+                  <strong>{item.ingredient}</strong> · {item.role}
+                  <br />
+                  <span className="small muted">{item.limitation}</span>
                 </p>
-                <p className="small muted">
-                  연결 근거 {section.evidenceIds.length}개
-                </p>
-              </article>
-            ))}
-            <ul className="small muted">
-              {plan.cautions.map((item, i) => (
-                <li key={i}>{item}</li>
               ))}
-            </ul>
-            <button
-              type="button"
-              className="button secondary"
-              onClick={downloadPlan}
-            >
-              기획 초안 내려받기
-            </button>
-          </div>
-        )}
-      </section>
+              {plan.sections.map((section, index) => (
+                <article className="plan-section" key={index}>
+                  <span className="eyebrow">구좌 {index + 1}</span>
+                  <h3>{section.headline}</h3>
+                  <p>{section.body}</p>
+                  <p className="small muted">
+                    비주얼 가이드 · {section.visualGuide}
+                  </p>
+                  <p className="small muted">
+                    연결 근거 {section.evidenceIds.length}개
+                  </p>
+                </article>
+              ))}
+              <ul className="small muted">
+                {plan.cautions.map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={downloadPlan}
+              >
+                기획 초안 내려받기
+              </button>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
