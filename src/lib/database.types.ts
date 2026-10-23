@@ -140,6 +140,99 @@ export type Database = {
           },
         ];
       };
+      planning_generation_requests: {
+        Row: {
+          agency_id: string;
+          base_version_id: string | null;
+          created_at: string;
+          error_message: string | null;
+          expires_at: string;
+          finished_at: string | null;
+          id: string;
+          input_hash: string;
+          model: string;
+          operation: string;
+          product_id: string;
+          project_id: string;
+          requested_by: string;
+          result_version_id: string | null;
+          section_id: string | null;
+          status: string;
+        };
+        Insert: {
+          agency_id: string;
+          base_version_id?: string | null;
+          created_at?: string;
+          error_message?: string | null;
+          expires_at?: string;
+          finished_at?: string | null;
+          id: string;
+          input_hash: string;
+          model: string;
+          operation: string;
+          product_id: string;
+          project_id: string;
+          requested_by: string;
+          result_version_id?: string | null;
+          section_id?: string | null;
+          status?: string;
+        };
+        Update: {
+          agency_id?: string;
+          base_version_id?: string | null;
+          created_at?: string;
+          error_message?: string | null;
+          expires_at?: string;
+          finished_at?: string | null;
+          id?: string;
+          input_hash?: string;
+          model?: string;
+          operation?: string;
+          product_id?: string;
+          project_id?: string;
+          requested_by?: string;
+          result_version_id?: string | null;
+          section_id?: string | null;
+          status?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "planning_generation_requests_agency_id_fkey";
+            columns: ["agency_id"];
+            isOneToOne: false;
+            referencedRelation: "agencies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "planning_generation_requests_base_version_id_fkey";
+            columns: ["base_version_id"];
+            isOneToOne: false;
+            referencedRelation: "planning_versions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "planning_generation_requests_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "planning_generation_requests_project_id_fkey";
+            columns: ["project_id"];
+            isOneToOne: false;
+            referencedRelation: "projects";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "planning_generation_requests_result_version_id_fkey";
+            columns: ["result_version_id"];
+            isOneToOne: false;
+            referencedRelation: "planning_versions";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       planning_versions: {
         Row: {
           action: string;
@@ -427,6 +520,28 @@ export type Database = {
     };
     Functions: {
       can_access_project: { Args: { p: string }; Returns: boolean };
+      complete_planning_generation: {
+        Args: { p_request_id: string; p_snapshot: Json };
+        Returns: {
+          action: string;
+          changed_section_id: string | null;
+          created_at: string;
+          created_by: string;
+          id: string;
+          parent_id: string | null;
+          product_id: string;
+          project_id: string;
+          restored_from: string | null;
+          revision: number;
+          snapshot: Json;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "planning_versions";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       is_agency_member: { Args: { a: string }; Returns: boolean };
     };
     Enums: {

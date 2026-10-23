@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isFoaming } from "./brief";
+import { ingredientNames } from "./ingredients";
 import { quantities } from "./analysis";
 
 export const sectionSchema = z.object({
@@ -92,14 +93,14 @@ export function planIssues(
   for (const section of plan.sections)
     issues.push(...sectionIssues(section, evidence));
   const ingredients = new Set(
-    (product.ingredients ?? "")
-      .normalize("NFKC")
-      .toLowerCase()
-      .split(/[,，;\n]+/)
-      .map((item) => item.trim()),
+    ingredientNames(product.ingredients ?? "").map((name) =>
+      name.toLowerCase(),
+    ),
   );
   for (const item of plan.ingredientInsights)
-    if (!ingredients.has(item.ingredient.normalize("NFKC").toLowerCase()))
+    if (
+      !ingredients.has(item.ingredient.normalize("NFKC").trim().toLowerCase())
+    )
       issues.push("전성분에 없는 성분이 분석에 포함됐습니다.");
   return [...new Set(issues)];
 }

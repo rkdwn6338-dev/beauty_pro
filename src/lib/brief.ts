@@ -1,7 +1,15 @@
 import { z } from "zod";
 
 export const categories = {
-  "페이스 클렌징": ["폼", "오일", "밀크", "밤", "워터", "티슈"],
+  "페이스 클렌징": [
+    "폼",
+    "팩 클렌저(거품형)",
+    "오일",
+    "밀크",
+    "밤",
+    "워터",
+    "티슈",
+  ],
   "헤어·바디": ["샴푸", "트리트먼트", "바디워시", "올인원 워시"],
   "민감 부위 클렌징": ["여성청결제", "여성청결티슈", "항문세정제"],
   "기초 스킨케어": ["크림", "로션", "세럼", "앰플", "아이크림"],
@@ -76,7 +84,8 @@ export const emptyBrief: Brief = {
   features: emptyFeatures,
 };
 export const isFoaming = (category: string, subtype: string) =>
-  (category === "페이스 클렌징" && subtype === "폼") ||
+  (category === "페이스 클렌징" &&
+    ["폼", "팩 클렌저(거품형)"].includes(subtype)) ||
   (category === "헤어·바디" &&
     ["샴푸", "바디워시", "올인원 워시"].includes(subtype)) ||
   (category === "민감 부위 클렌징" &&

@@ -1,5 +1,6 @@
 import "server-only";
 import { generateText, Output } from "ai";
+import { boundedPlanningInput } from "./generation-requests";
 import { analysisSchema } from "./analysis";
 import { planSchema, sectionSchema } from "./planning";
 
@@ -71,7 +72,7 @@ export async function generatePlan(model: string, input: unknown) {
   const result = await generateText({
     model,
     system: `${boundary}\n국내 뷰티 커머스 상세페이지 기획 초안을 작성하세요. 고객 특징을 활용하면서 전성분을 독립 분석하되 원료 역할과 완제품 효능을 구분하세요. 전성분에 표기된 성분명만 ingredientInsights에 쓰세요. 근거가 부족하면 시험 수치나 효능을 만들지 말고 확인 필요 사항을 남기세요. 승인된 evidence만 인용하고 각 구좌의 evidenceIds로 연결하세요. 구매 이유와 제품별 전략을 선택하고 동일한 문제점 구조를 강제하지 마세요. 거품형 세정 제품은 foam 구좌를 포함하고 비거품 제품에는 강제하지 마세요. 수치·pH·함량·인증·사용법은 승인된 근거에서 확인한 내용만 소비자 카피에 쓰세요. 마지막 네 구좌는 recommendation, closing, how_to_use, product_visual 순서이며 closing은 전체에 정확히 하나입니다. 카피에는 디자이너 지시를 넣지 말고 visualGuide에만 설명하세요.`,
-    prompt: JSON.stringify(input),
+    prompt: boundedPlanningInput(input),
     output: Output.object({ schema: planSchema }),
     maxOutputTokens: 8000,
     maxRetries: 0,
@@ -84,7 +85,7 @@ export async function regenerateSection(model: string, input: unknown) {
   const result = await generateText({
     model,
     system: `${boundary}\n상세페이지의 선택한 한 구좌만 다시 작성하세요. 구좌 type은 그대로 유지하고 승인된 sources의 ID만 evidenceIds에 연결하세요. 원료 특성과 완제품 효능을 구분하고 수치·pH·시험 결과는 연결한 원문에서 확인한 값만 사용하세요. 고객의 수정 요청이 근거와 충돌하면 따르지 마세요. 타 구좌의 내용은 응답에 포함하지 마세요. 비주얼 제작 지시는 visualGuide에만 작성하세요.`,
-    prompt: JSON.stringify(input),
+    prompt: boundedPlanningInput(input),
     output: Output.object({ schema: sectionSchema }),
     maxOutputTokens: 2500,
     maxRetries: 0,
