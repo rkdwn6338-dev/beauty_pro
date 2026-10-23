@@ -1,4 +1,54 @@
 import { test, expect } from "@playwright/test";
+test("가상 근거의 수치를 검수하고 승인한 뒤 기획 예시를 확인한다", async ({
+  page,
+}) => {
+  await page.goto("/analysis-preview");
+  await expect(
+    page.getByText("화면 체험입니다.", { exact: false }),
+  ).toBeVisible();
+  const approve = page.getByRole("button", { name: "체험에서 승인하기" });
+  await expect(approve).toBeDisabled();
+  await page.getByLabel("수치", { exact: true }).fill("99.9");
+  await expect(page.getByLabel("근거 검토 필요 항목")).toContainText(
+    "수치·단위가 인용문과 일치하지 않습니다.",
+  );
+  await page
+    .getByLabel("체험: 원본과 대조하는 검토 과정을 이해했습니다.", {
+      exact: true,
+    })
+    .check();
+  await expect(approve).toBeDisabled();
+  await page.getByLabel("수치", { exact: true }).fill("12.5");
+  await expect(
+    page.getByLabel("체험: 원본과 대조하는 검토 과정을 이해했습니다.", {
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  await page
+    .getByLabel("체험: 원본과 대조하는 검토 과정을 이해했습니다.", {
+      exact: true,
+    })
+    .check();
+  await approve.click();
+  await expect(
+    page.getByText("승인된 근거 1개", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "원문 인용", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "기획 예시 보기" }).click();
+  await expect(
+    page.getByRole("heading", { name: "핵심 구매 이유", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("AI를 호출하지 않았습니다.", { exact: false }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
 test("홈에서 로그인으로 이동하고 비로그인 프로젝트 접근을 차단한다", async ({
   page,
 }) => {
@@ -6,6 +56,11 @@ test("홈에서 로그인으로 이동하고 비로그인 프로젝트 접근을
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "제품의 가능성을",
   );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
   await page.getByRole("link", { name: "프로젝트 시작하기" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByLabel("이메일", { exact: true })).toBeVisible();
